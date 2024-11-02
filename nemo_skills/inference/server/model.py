@@ -19,9 +19,8 @@ import logging
 import os
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from typing import Union
-
 import openai
 import requests
 
@@ -455,8 +454,7 @@ class VLLMModel(BaseModel):
         self.oai_client = openai.OpenAI(
             api_key="EMPTY",
             base_url=f"http://{self.server_host}:{self.server_port}/v1",
-            timeout=280,
-            max_retries=0,
+            timeout=None,
         )
 
         self.model_name_server = self.get_model_name_from_server()
@@ -544,6 +542,7 @@ class VLLMModel(BaseModel):
         logit_bias: dict = None,
         seed: int = None,
         parse_response: bool = True,
+        timeout: float = 250.0,
     ) -> Union[list[str], openai.types.Completion]:
         if top_k == 0:
             top_k = -1
@@ -556,26 +555,32 @@ class VLLMModel(BaseModel):
                 "spaces_between_special_tokens": False,
             }
         }
-        try:
-            response = self.oai_client.completions.create(
-            model=self.model,
-            prompt=prompt,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            n=num_generations,
-            stream=False,
-            stop=stop,
-            echo=echo,
-            frequency_penalty=frequency_penalty,
-            presence_penalty=presence_penalty,
-            logprobs=logprobs,
-            logit_bias=logit_bias,
-            seed=seed,
-            **extra_body,
-            )
-        except:
-            return None
+
+        # Use ThreadPoolExecutor to add timeout
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(self.oai_client.completions.create,
+                                     model=self.model,
+                                     prompt=prompt,
+                                     max_tokens=max_tokens,
+                                     temperature=temperature,
+                                     top_p=top_p,
+                                     n=num_generations,
+                                     stream=False,
+                                     stop=stop,
+                                     echo=echo,
+                                     frequency_penalty=frequency_penalty,
+                                     presence_penalty=presence_penalty,
+                                     logprobs=logprobs,
+                                     logit_bias=logit_bias,
+                                     seed=seed,
+                                     **extra_body)
+
+            try:
+                response = future.result(timeout=timeout)  # Wait for completion with timeout
+            except TimeoutError:
+                return None  # Return None if the call times out
+            except Exception as e:
+                return None  # Handle general exceptions, possibly log them
 
         if parse_response:
             response = self.parse_openai_response(response)
