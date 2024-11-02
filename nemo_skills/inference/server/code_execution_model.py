@@ -74,6 +74,8 @@ class CodeExecutionWrapper:
         random_seed: int = 0,
         stop_phrases: list[str] | None = None,
         remove_stop_phrases: bool = True,
+        start_time: float = 0.,
+        timeout: float = 250.,
     ) -> list[dict]:
         # TODO: support properly prompt as dict of messages
 
@@ -92,6 +94,8 @@ class CodeExecutionWrapper:
             "random_seed": random_seed,
             "repetition_penalty": repetition_penalty,
             "stop_phrases": stop_phrases + [code_end],
+            "start_time": start_time,
+            "timeout": timeout,
         }
         list_args = set()
         for key, value in request.items():
@@ -119,7 +123,7 @@ class CodeExecutionWrapper:
         num_executions = 0
 
         # Using 32 max executions at a time to not hit timeouts in a sandbox
-        with ThreadPoolExecutor(max_workers=32) as executor:
+        with ThreadPoolExecutor(max_workers=128) as executor:
             while len(remaining_ids) > 0:
                 num_executions += 1
                 cur_request = {key: value for key, value in request.items() if key != 'prompts'}
