@@ -526,7 +526,13 @@ class VLLMModel(BaseModel):
                 }
                 preprocess_request(request)
                 futures.append(executor.submit(self.prompt_api, **request))
-        outputs = [{'generation': future.result()[0]} for future in futures if futures]
+        outputs = []
+        for future in futures:
+            try:
+                outputs.append({'generation': future.result()[0]})
+            except:
+                continue
+        # outputs = [{'generation': future.result()[0]} for future in futures if futures]
         if remove_stop_phrases:
             postprocess_output(outputs, stop_phrases)
 
