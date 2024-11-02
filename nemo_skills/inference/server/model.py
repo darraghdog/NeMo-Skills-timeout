@@ -473,6 +473,8 @@ class VLLMModel(BaseModel):
         random_seed: int | list[int] = 0,
         stop_phrases: list[str] | list[list[str]] | None = None,
         remove_stop_phrases: bool = True,
+        start_time: float = 0.,
+        timeout: float = 250.,
     ) -> list[dict]:
         if isinstance(prompts[0], dict):
             raise NotImplementedError("TODO: need to add this support, but not implemented yet.")
@@ -499,7 +501,7 @@ class VLLMModel(BaseModel):
             if not is_list:
                 kwargs[key] = [value for _ in range(len(prompts))]
 
-        self.start_time = time.time()
+        # self.start_time = time.time()
         futures = []
         with ThreadPoolExecutor(max_workers=len(prompts)) as executor:
             for request_idx in range(len(prompts)):
@@ -519,6 +521,8 @@ class VLLMModel(BaseModel):
                     'logprobs': None,
                     'logit_bias': None,
                     'num_generations': 1,
+                    'start_time': start_time,
+                    'timeout': timeout,
                 }
                 preprocess_request(request)
                 futures.append(executor.submit(self.prompt_api, **request))
@@ -545,6 +549,7 @@ class VLLMModel(BaseModel):
         logit_bias: dict = None,
         seed: int = None,
         parse_response: bool = True,
+        start_time: float = 0.,
         timeout: float = 250.0,
     ) -> Union[list[str], openai.types.Completion]:
         if top_k == 0:
@@ -561,7 +566,7 @@ class VLLMModel(BaseModel):
 
         # Use ThreadPoolExecutor to add timeout
         ID = random.randint(0, 1000000)
-        LOG.info(f"Start time {ID} : ", int(time.time()))
+        print(f"Start time {ID} : ", int(time.time()))
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(self.oai_client.completions.create,
@@ -582,13 +587,13 @@ class VLLMModel(BaseModel):
                                      **extra_body)
 
             try:
-                response = future.result(timeout = max(0,  timeout - (time.time() - self.start_time) ) )  # Wait for completion with timeout
+                response = future.result(timeout = max(0,  (timeout + start_time) - time.time() ) )  # Wait for completion with timeout
             except TimeoutError:
                 return None  # Return None if the call times out
             except Exception as e:
                 return None  # Handle general exceptions, possibly log them
 
-        LOG.info(f"Finish time {ID} : ", int(time.time()))
+        print(f"Finish time {ID} : ", int(time.time()))
         if parse_response:
             response = self.parse_openai_response(response)
 
