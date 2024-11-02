@@ -557,6 +557,7 @@ class VLLMModel(BaseModel):
         }
 
         # Use ThreadPoolExecutor to add timeout
+
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(self.oai_client.completions.create,
                                      model=self.model,
