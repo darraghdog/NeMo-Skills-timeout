@@ -94,10 +94,8 @@ class CodeExecutionWrapper:
             "random_seed": random_seed,
             "repetition_penalty": repetition_penalty,
             "stop_phrases": stop_phrases + [code_end],
-            "start_time": start_time,
-            "timeout": timeout,
         }
-        list_args = set(['start_time', 'timeout'])
+        list_args = set()
         for key, value in request.items():
             is_list = False
             if key == 'stop_phrases' and (value and isinstance(value[0], list)):
@@ -131,6 +129,9 @@ class CodeExecutionWrapper:
                     if key in list_args:
                         cur_request[key] = [value[idx] for idx in remaining_ids]
                 cur_request["prompts"] = [new_outputs[idx]['prompt'] for idx in remaining_ids]
+                cur_request["start_time"] = start_time
+                cur_request["timeout"] = timeout
+
                 outputs = [
                     self._handle_stop_words(output['generation'])
                     for output in self.model.generate(**cur_request, remove_stop_phrases=False)
