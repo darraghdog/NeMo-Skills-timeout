@@ -97,7 +97,7 @@ class CodeExecutionWrapper:
             "start_time": start_time,
             "timeout": timeout,
         }
-        list_args = set()
+        list_args = set(['start_time', 'timeout'])
         for key, value in request.items():
             is_list = False
             if key == 'stop_phrases' and (value and isinstance(value[0], list)):
