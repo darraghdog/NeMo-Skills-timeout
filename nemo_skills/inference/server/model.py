@@ -455,7 +455,8 @@ class VLLMModel(BaseModel):
         self.oai_client = openai.OpenAI(
             api_key="EMPTY",
             base_url=f"http://{self.server_host}:{self.server_port}/v1",
-            timeout=None,
+            timeout=280,
+            max_retries=0,
         )
 
         self.model_name_server = self.get_model_name_from_server()
@@ -520,7 +521,7 @@ class VLLMModel(BaseModel):
                 }
                 preprocess_request(request)
                 futures.append(executor.submit(self.prompt_api, **request))
-        outputs = [{'generation': future.result()[0]} for future in futures]
+        outputs = [{'generation': future.result()[0]} for future in futures if futures]
         if remove_stop_phrases:
             postprocess_output(outputs, stop_phrases)
 
@@ -555,7 +556,8 @@ class VLLMModel(BaseModel):
                 "spaces_between_special_tokens": False,
             }
         }
-        response = self.oai_client.completions.create(
+        try:
+            response = self.oai_client.completions.create(
             model=self.model,
             prompt=prompt,
             max_tokens=max_tokens,
@@ -571,7 +573,9 @@ class VLLMModel(BaseModel):
             logit_bias=logit_bias,
             seed=seed,
             **extra_body,
-        )
+            )
+        except:
+            return None
 
         if parse_response:
             response = self.parse_openai_response(response)
