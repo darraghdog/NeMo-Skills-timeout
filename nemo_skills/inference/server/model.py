@@ -23,6 +23,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from typing import Union
 import openai
 import requests
+import random
 
 LOG = logging.getLogger(__name__)
 
@@ -459,6 +460,7 @@ class VLLMModel(BaseModel):
 
         self.model_name_server = self.get_model_name_from_server()
         self.model = self.model_name_server
+        self.start_time = None
 
     def generate(
         self,
@@ -497,6 +499,7 @@ class VLLMModel(BaseModel):
             if not is_list:
                 kwargs[key] = [value for _ in range(len(prompts))]
 
+        self.start_time = time.time()
         futures = []
         with ThreadPoolExecutor(max_workers=len(prompts)) as executor:
             for request_idx in range(len(prompts)):
@@ -557,6 +560,8 @@ class VLLMModel(BaseModel):
         }
 
         # Use ThreadPoolExecutor to add timeout
+        ID = random.randint(0, 1000000)
+        LOG.info(f"Start time {ID} : ", int(time.time()))
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(self.oai_client.completions.create,
@@ -577,12 +582,13 @@ class VLLMModel(BaseModel):
                                      **extra_body)
 
             try:
-                response = future.result(timeout=timeout)  # Wait for completion with timeout
+                response = future.result(timeout = max(0,  timeout - (time.time() - self.start_time) ) )  # Wait for completion with timeout
             except TimeoutError:
                 return None  # Return None if the call times out
             except Exception as e:
                 return None  # Handle general exceptions, possibly log them
 
+        LOG.info(f"Finish time {ID} : ", int(time.time()))
         if parse_response:
             response = self.parse_openai_response(response)
 
