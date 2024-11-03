@@ -19,7 +19,7 @@ import logging
 import os
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
 from typing import Union
 import openai
 import requests
@@ -597,8 +597,10 @@ class VLLMModel(BaseModel):
             try:
                 response = future.result(timeout = max(0,  (timeout + start_time) - time.time() ) )  # Wait for completion with timeout
             except TimeoutError:
+                print(f"Timeout {ID} : {int(time.time())}; Run time : {int(time.time()) - start_timer}")
                 return None  # Return None if the call times out
             except Exception as e:
+                print(f"Exception {ID} : {int(time.time())}; Run time : {int(time.time()) - start_timer} ; Exception {e}")
                 return None  # Handle general exceptions, possibly log them
 
         print(f"Finish time {ID} : {int(time.time())}; Run time : {int(time.time()) - start_timer}")
