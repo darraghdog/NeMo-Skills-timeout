@@ -572,6 +572,7 @@ class VLLMModel(BaseModel):
 
         # Use ThreadPoolExecutor to add timeout
         ID = random.randint(0, 1000000)
+
         print(f"Start time {ID} : ", int(time.time()))
 
         with ThreadPoolExecutor(max_workers=1) as executor:

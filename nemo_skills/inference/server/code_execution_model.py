@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
+import time
 import copy
 import logging
 from collections import Counter
@@ -120,8 +120,9 @@ class CodeExecutionWrapper:
         remaining_ids = list(range(len(new_outputs)))
         num_executions = 0
 
+        print(f"----------- START 32 THREADPOOL --------------- {int(time.time())}")
         # Using 32 max executions at a time to not hit timeouts in a sandbox
-        with ThreadPoolExecutor(max_workers=128) as executor:
+        with ThreadPoolExecutor(max_workers=32) as executor:
             while len(remaining_ids) > 0:
                 num_executions += 1
                 cur_request = {key: value for key, value in request.items() if key != 'prompts'}
@@ -132,10 +133,12 @@ class CodeExecutionWrapper:
                 cur_request["start_time"] = start_time
                 cur_request["timeout"] = timeout
 
+                print(f"----------- START MODEL GENERATE --------------- {int(time.time())}")
                 outputs = [
                     self._handle_stop_words(output['generation'])
                     for output in self.model.generate(**cur_request, remove_stop_phrases=False)
                 ]
+                print(f"----------- FINISH MODEL GENERATE --------------- {int(time.time())}")
                 new_ids = []
                 # checking if any of the outputs need code execution and submitting requests in parallel
                 futures = [None] * len(prompts)
@@ -150,6 +153,8 @@ class CodeExecutionWrapper:
                             max_output_characters=self.config.max_code_output_characters,
                             session_id=new_outputs[idx]['session_id'],
                         )
+
+                print(f"----------- FINISH SANDBOX CODE EXECUTION --------------- {int(time.time())}")
                 for idx, output in zip(remaining_ids, outputs):
                     # .rfind(code_end, 0, -1) searches for the second-to-last occurrence of code_end and checks
                     # that the last code_begin is not closed to ensure that we are inside the code block
@@ -177,6 +182,7 @@ class CodeExecutionWrapper:
                         output = trim_after_stop_phrases(output, stop_phrases)
                         new_outputs[idx]['prompt'] += output
                 remaining_ids = new_ids
+                print(f"----------- FINISH CODE FORMATTING --------------- {int(time.time())}")
 
         # removing original prompt
         outputs = []
@@ -184,6 +190,9 @@ class CodeExecutionWrapper:
             if output['session_id'] is not None:
                 self.sandbox.clear_session(output['session_id'])
             outputs.append({'generation': output['prompt'][len(orig_prompt) :]})
+
+        print(f"----------- FINISH SESSION CLEARING --------------- {int(time.time())}")
+
         return outputs
 
     def _recover_from_error(self, request, new_output, executor):
