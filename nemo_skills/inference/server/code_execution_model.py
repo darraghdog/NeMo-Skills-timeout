@@ -74,8 +74,9 @@ class CodeExecutionWrapper:
         random_seed: int = 0,
         stop_phrases: list[str] | None = None,
         remove_stop_phrases: bool = True,
+        timeout: list[int] | None = None,
         start_time: float = 0.,
-        timeout: float = 250.,
+        #btimeout: float = 250.,
     ) -> list[dict]:
         # TODO: support properly prompt as dict of messages
 
@@ -123,66 +124,69 @@ class CodeExecutionWrapper:
         print(f"----------- START 32 THREADPOOL --------------- {int(time.time())}")
         # Using 32 max executions at a time to not hit timeouts in a sandbox
         with ThreadPoolExecutor(max_workers=32) as executor:
-            # while len(remaining_ids) > 0:
-            num_executions += 1
-            cur_request = {key: value for key, value in request.items() if key != 'prompts'}
-            for key, value in cur_request.items():
-                if key in list_args:
-                    cur_request[key] = [value[idx] for idx in remaining_ids]
-            cur_request["prompts"] = [new_outputs[idx]['prompt'] for idx in remaining_ids]
-            cur_request["start_time"] = start_time
-            cur_request["timeout"] = timeout
+            while len(remaining_ids) > 0:
+                num_executions += 1
+                cur_request = {key: value for key, value in request.items() if key != 'prompts'}
+                for key, value in cur_request.items():
+                    if key in list_args:
+                        cur_request[key] = [value[idx] for idx in remaining_ids]
+                cur_request["prompts"] = [new_outputs[idx]['prompt'] for idx in remaining_ids]
+                cur_request["start_time"] = start_time
+                cur_request["timeout"] = timeout[num_executions - 1]
 
-            print(f"----------- START MODEL GENERATE --------------- {int(time.time())}")
-            outputs = [
-                self._handle_stop_words(output['generation'])
-                for output in self.model.generate(**cur_request, remove_stop_phrases=False)
-            ]
-            print(f"----------- FINISH MODEL GENERATE --------------- {int(time.time())}")
-            new_ids = []
-            # checking if any of the outputs need code execution and submitting requests in parallel
-            futures = [None] * len(prompts)
-            for idx, output in zip(remaining_ids, outputs):
-                # .rfind(code_end, 0, -1) searches for the second-to-last occurrence of code_end and checks
-                # that the last code_begin is not closed to ensure that we are inside the code block
-                if output.endswith(code_end) and output.rfind(code_begin) > output.rfind(code_end, 0, -1):
-                    futures[idx] = executor.submit(
-                        self.sandbox.execute_code,
-                        generated_code=extract_code_to_execute(output, code_begin, code_end),
-                        timeout=self.config.code_execution_timeout,
-                        max_output_characters=self.config.max_code_output_characters,
-                        session_id=new_outputs[idx]['session_id'],
-                    )
+                print(f"----------- START MODEL GENERATE --------------- {int(time.time())}")
+                outputs = [
+                    self._handle_stop_words(output['generation'])
+                    for output in self.model.generate(**cur_request, remove_stop_phrases=False)
+                ]
+                print(f"----------- FINISH MODEL GENERATE --------------- {int(time.time())}")
+                new_ids = []
+                # checking if any of the outputs need code execution and submitting requests in parallel
+                futures = [None] * len(prompts)
+                for idx, output in zip(remaining_ids, outputs):
+                    # .rfind(code_end, 0, -1) searches for the second-to-last occurrence of code_end and checks
+                    # that the last code_begin is not closed to ensure that we are inside the code block
+                    if output.endswith(code_end) and output.rfind(code_begin) > output.rfind(code_end, 0, -1):
+                        futures[idx] = executor.submit(
+                            self.sandbox.execute_code,
+                            generated_code=extract_code_to_execute(output, code_begin, code_end),
+                            timeout=self.config.code_execution_timeout,
+                            max_output_characters=self.config.max_code_output_characters,
+                            session_id=new_outputs[idx]['session_id'],
+                        )
 
-            print(f"----------- FINISH SANDBOX CODE EXECUTION --------------- {int(time.time())}")
-            for idx, output in zip(remaining_ids, outputs):
-                # .rfind(code_end, 0, -1) searches for the second-to-last occurrence of code_end and checks
-                # that the last code_begin is not closed to ensure that we are inside the code block
-                if output.endswith(code_end) and output.rfind(code_begin) > output.rfind(code_end, 0, -1):
-                    execution_dict, new_outputs[idx]['session_id'] = futures[idx].result()
-                    if execution_dict['stderr']:
-                        # TODO: error recovery should happen here that might change output
-                        new_outputs[idx]['prompt'] += output
+                print(f"----------- FINISH SANDBOX CODE EXECUTION --------------- {int(time.time())}")
+                for idx, output in zip(remaining_ids, outputs):
+                    # .rfind(code_end, 0, -1) searches for the second-to-last occurrence of code_end and checks
+                    # that the last code_begin is not closed to ensure that we are inside the code block
+                    if output.endswith(code_end) and output.rfind(code_begin) > output.rfind(code_end, 0, -1):
+                        execution_dict, new_outputs[idx]['session_id'] = futures[idx].result()
+                        if execution_dict['stderr']:
+                            # TODO: error recovery should happen here that might change output
+                            new_outputs[idx]['prompt'] += output
+                        else:
+                            new_outputs[idx]['prompt'] += output
+
+                        # adding code output to the prompt
+                        new_outputs[idx]['prompt'] += format_code_output(
+                            execution_dict, code_output_begin, code_output_end, code_output_format
+                        )
+                        # setting a limit on max code executions to speed things up
+                        # (sometimes keeps repeating the same sequence forever)
+                        if num_executions >= self.config.max_code_executions:
+                            new_outputs[idx]['prompt'] += "<max number of code executions reached>"
+                        elif not (self.config.stop_on_code_error and execution_dict['stderr']):
+                            new_ids.append(idx)
                     else:
+                        # that's the only case where we might need to remove stop words, so doing it here
+                        # we cannot do it at the end, since this needs to be done only on the last generation
+                        output = trim_after_stop_phrases(output, stop_phrases)
                         new_outputs[idx]['prompt'] += output
 
-                    # adding code output to the prompt
-                    new_outputs[idx]['prompt'] += format_code_output(
-                        execution_dict, code_output_begin, code_output_end, code_output_format
-                    )
-                    # setting a limit on max code executions to speed things up
-                    # (sometimes keeps repeating the same sequence forever)
-                    if num_executions >= self.config.max_code_executions:
-                        new_outputs[idx]['prompt'] += "<max number of code executions reached>"
-                    elif not (self.config.stop_on_code_error and execution_dict['stderr']):
-                        new_ids.append(idx)
-                else:
-                    # that's the only case where we might need to remove stop words, so doing it here
-                    # we cannot do it at the end, since this needs to be done only on the last generation
-                    output = trim_after_stop_phrases(output, stop_phrases)
-                    new_outputs[idx]['prompt'] += output
-            remaining_ids = new_ids
-            print(f"----------- FINISH CODE FORMATTING --------------- {int(time.time())}")
+                    cur_request["start_time"] = time.time()
+
+                remaining_ids = new_ids
+                print(f"----------- FINISH CODE FORMATTING --------------- {int(time.time())}")
 
         # removing original prompt
         outputs = []
