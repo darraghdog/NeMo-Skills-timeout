@@ -183,7 +183,9 @@ class CodeExecutionWrapper:
                         output = trim_after_stop_phrases(output, stop_phrases)
                         new_outputs[idx]['prompt'] += output
 
-                    cur_request["start_time"] = time.time()
+                    # Reset the start time
+                    # cur_request["start_time"] = time.time()
+                    start_time = time.time()
 
                 remaining_ids = new_ids
                 print(f"----------- FINISH CODE FORMATTING --------------- {int(time.time())}")
