@@ -573,8 +573,8 @@ class VLLMModel(BaseModel):
 
         # Use ThreadPoolExecutor to add timeout
         ID = random.randint(0, 1000000)
-
-        print(f"Start time {ID} : ", int(time.time()))
+        start_timer = int(time.time())
+        print(f"Start time {ID} : ", start_timer)
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(self.oai_client.completions.create,
@@ -601,7 +601,7 @@ class VLLMModel(BaseModel):
             except Exception as e:
                 return None  # Handle general exceptions, possibly log them
 
-        print(f"Finish time {ID} : ", int(time.time()))
+        print(f"Finish time {ID} : {int(time.time())}; Run time : {int(time.time()) - start_timer}")
         if parse_response:
             response = self.parse_openai_response(response)
 
